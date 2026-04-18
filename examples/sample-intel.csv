@@ -1,0 +1,4 @@
+title,description,sourceType,locationName,latitude,longitude,eventTime,confidence,tags
+Checkpoint activity,Portable barriers deployed,HUMINT,Checkpoint Delta,28.6139,77.2090,2026-04-18T01:45:00Z,81,"checkpoint, barriers"
+Social chatter on convoy,Convoy references rising,OSINT,Transit Corridor Alpha,24.8607,67.0011,2026-04-18T03:20:00Z,72,"convoy, osint"
+Thermal imagery note,Heat signatures visible,IMINT,Depot West,26.9124,75.7873,2026-04-17T19:10:00Z,88,"imagery, depot"

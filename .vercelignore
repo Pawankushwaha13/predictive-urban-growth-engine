@@ -1,0 +1,11 @@
+node_modules
+client/node_modules
+server/node_modules
+.git
+dev-server.log
+dev-server-error.log
+server-dev.log
+server-dev-error.log
+client-dev.log
+client-dev-error.log
+strategic-fusion-dashboard-source.zip
