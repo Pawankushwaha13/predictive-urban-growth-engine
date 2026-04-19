@@ -86,12 +86,6 @@ npm run dev
 - `GET /api/zones/summary`
 - `POST /api/zones/seed`
 
-Legacy aliases remain available at:
-
-- `GET /api/intelligence`
-- `GET /api/intelligence/summary`
-- `POST /api/intelligence/seed`
-
 ### Manual ingestion
 
 - `POST /api/ingestion/manual`

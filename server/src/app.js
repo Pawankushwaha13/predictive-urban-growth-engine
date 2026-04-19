@@ -32,7 +32,6 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.use("/api/intelligence", intelligenceRoutes);
 app.use("/api/zones", intelligenceRoutes);
 app.use("/api/ingestion", ingestionRoutes);
 app.use("/api/connectors", connectorRoutes);
