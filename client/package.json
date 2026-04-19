@@ -1,5 +1,5 @@
 {
-  "name": "strategic-fusion-dashboard-client",
+  "name": "predictive-urban-growth-engine-client",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -20,4 +20,3 @@
     "vite": "^7.1.12"
   }
 }
-
