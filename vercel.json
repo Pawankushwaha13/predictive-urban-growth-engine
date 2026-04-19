@@ -4,15 +4,21 @@
   "installCommand": "npm install --prefix server && npm install --prefix client",
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "client/dist",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/index.html"
+      "src": "/api",
+      "dest": "/api.js"
     },
     {
-      "source": "/:path((?!api/).*)",
-      "destination": "/index.html"
-    }
+      "src": "/api/(.*)",
+      "dest": "/api.js?path=$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    },
   ]
 }
-
