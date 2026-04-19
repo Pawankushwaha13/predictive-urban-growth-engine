@@ -5,6 +5,7 @@ dist/
 *.local
 *.log
 *.zip
+.split/
 .vercel/
 server/uploads/*
 !server/uploads/.gitkeep
