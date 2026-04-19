@@ -1,26 +1,44 @@
-# Strategic Fusion Dashboard
+# Predictive Urban Growth Engine
 
-Web-based MERN intelligence dashboard for fusing `OSINT`, `HUMINT`, and `IMINT` onto one interactive terrain map.
+MERN-style geospatial analytics dashboard for real-estate investment teams that want to identify future high-growth zones before appreciation is fully visible in lagging sales data.
 
-## What is included
+## What this working build does
 
-- Express backend with MongoDB-ready storage and Mongoose data model
-- Demo fallback mode so the app still opens even if MongoDB is not configured yet
-- Manual ingestion for `CSV`, `Excel`, `JSON`, and `JPG/JPEG/PNG` imagery
-- Connector APIs for syncing intelligence from MongoDB collections and AWS S3
-- React dashboard with:
-  - terrain-style geospatial map
-  - source filters and search
-  - hover popups with imagery and metadata
-  - side-panel inspection view
-  - drag-and-drop ingestion workflows
+- Scores micro-markets with a `Growth Velocity Score` built from:
+  - municipal declarations and infrastructure catalysts
+  - market demand signals
+  - rental yield and pricing dislocation
+  - supply-side risk
+- Visualizes hotspots on an interactive India map
+- Renders zone intensity with `heat-style` circles and ranked hotspots
+- Ranks micro-markets by projected upside over a `24-60 month` horizon
+- Runs in `demo fallback` mode without MongoDB, so the product works immediately
+- Accepts `CSV`, `Excel`, and `JSON` uploads for custom zone datasets
+- Harvests municipal signals from `PDF`, `HTML`, `TXT`, or pasted text
+- Aggregates portal-style market snapshots for listing density, pricing velocity, and search demand
+- Supports `live-style connector presets` for municipal portals, `99acres`, and `MagicBricks`
+- Crawls linked municipal tender documents from a landing page before scoring
+- Generates explainable `AI memo` summaries for each hotspot
+
+## Product framing
+
+This first working version is designed around the project brief:
+
+- `Municipal declarations` act as lead indicators
+- `Market activity` acts as a demand indicator
+- `Rental and pricing spread` highlights undervaluation
+- The dashboard projects all of that into a hotspot-oriented, map-first workflow
+
+The current scoring engine is rules-based and explainable. Municipal and market harvesting are now available in-app, with demo source packs plus manual source input. This makes the system a strong base for later upgrades like scheduled live crawling, richer OCR, and model retraining.
 
 ## Project structure
 
 ```text
 .
+|-- api/        # Vercel function entry points
 |-- client/     # React + Vite dashboard
-|-- server/     # Express API + ingestion + sync connectors
+|-- examples/   # Sample import files
+|-- server/     # Express API, scoring engine, persistence, ingestion
 `-- README.md
 ```
 
@@ -41,15 +59,15 @@ Copy these files and update values as needed:
 - `server/.env.example` -> `server/.env`
 - `client/.env.example` -> `client/.env`
 
-Minimum backend config for full MERN mode:
+Minimum backend config:
 
 ```env
 PORT=5000
 CLIENT_URL=http://localhost:5173
-DATABASE_URI=mongodb://127.0.0.1:27017/strategic-fusion-dashboard
+DATABASE_URI=mongodb://127.0.0.1:27017/urban-growth-engine
 ```
 
-If `DATABASE_URI` is missing or MongoDB is offline, the API runs in `demo fallback` mode with built-in sample records.
+If `DATABASE_URI` is missing or MongoDB is unavailable, the API automatically runs in demo mode with built-in micro-market data.
 
 ### 3. Start the stack
 
@@ -62,7 +80,13 @@ npm run dev
 
 ## API overview
 
-### Intelligence
+### Zones
+
+- `GET /api/zones`
+- `GET /api/zones/summary`
+- `POST /api/zones/seed`
+
+Legacy aliases remain available at:
 
 - `GET /api/intelligence`
 - `GET /api/intelligence/summary`
@@ -71,122 +95,151 @@ npm run dev
 ### Manual ingestion
 
 - `POST /api/ingestion/manual`
-  - multipart form field: `file`
+  - multipart field: `file`
   - supports `.csv`, `.xls`, `.xlsx`, `.json`
-- `POST /api/ingestion/images`
-  - multipart form field: `images`
-  - supports `.jpg`, `.jpeg`, `.png`
 
-### Cloud connectors
+### Predictive pipeline connectors
 
-- `POST /api/connectors/mongodb/sync`
-- `POST /api/connectors/s3/sync`
+- `GET /api/connectors/templates`
+- `POST /api/connectors/municipal/harvest`
+  - multipart field: `file`
+  - accepts `.pdf`, `.html`, `.htm`, `.txt`
+  - also accepts pasted `rawText`
+  - accepts `profileId`, `sourceUrl`, `crawlLinkedDocuments`, `maxLinkedDocuments`
+- `POST /api/connectors/market/harvest`
+  - accepts JSON body for portal-style market snapshots
+  - supports `connectorId` values such as `99acres-live` and `magicbricks-live`
+  - accepts live `url`, raw `HTML`, raw `JSON`, or structured `CSV/JSON` feeds
+- `POST /api/connectors/pipeline/run`
+  - runs municipal + market fusion in one step
+  - accepts custom `municipalSources` and `marketSources` arrays
 
-## Expected structured data fields
+### Included live connector presets
 
-The manual structured uploader recognizes common aliases, but these fields work best:
+- Municipal: `gmda-live`, `ghmc-live`, `bmrda-live`
+- Market: `99acres-live`, `magicbricks-live`
+
+### Local connector fixtures
+
+Example local pages for connector testing are included in:
+
+- `examples/connector-fixtures/municipal-portal.html`
+- `examples/connector-fixtures/99acres-dwarka.html`
+- `examples/connector-fixtures/magicbricks-sector150.html`
+
+## Recommended upload fields
+
+The uploader accepts aliases, but these fields work best:
 
 - `title`
-- `description`
-- `sourceType`
-- `locationName`
+- `city`
+- `state`
+- `corridor`
 - `latitude`
 - `longitude`
-- `eventTime`
-- `confidence`
+- `pricePerSqft`
+- `priceGrowthPct`
+- `rentalYieldPct`
+- `rentalAbsorptionPct`
+- `listingDensityScore`
+- `searchMomentumScore`
+- `permitMomentumScore`
+- `cluMomentumScore`
+- `infrastructureBoostScore`
+- `supplyRiskScore`
+- `monthsToCatalyst`
+- `priceToCityMedianRatio`
+- `readyToMovePricePerSqft`
+- `underConstructionPricePerSqft`
+- `municipalSignals`
 - `tags`
-- `mediaUrl`
 
-Example CSV:
+For `municipalSignals`, use a JSON array string when possible.
 
-```csv
-title,description,sourceType,locationName,latitude,longitude,eventTime,confidence,tags
-Checkpoint activity,Portable barriers deployed,HUMINT,Checkpoint Delta,28.6139,77.2090,2026-04-18T01:45:00Z,81,"checkpoint, barriers"
-Social chatter on convoy,Convoy references rising,OSINT,Transit Corridor Alpha,24.8607,67.0011,2026-04-18T03:20:00Z,72,"convoy, osint"
-```
-
-## MongoDB sync payload example
+Example:
 
 ```json
-{
-  "uri": "mongodb+srv://username:password@cluster.mongodb.net/",
-  "database": "intel",
-  "collection": "osint_reports",
-  "limit": 100
-}
-```
-
-## S3 sync payload example
-
-```json
-{
-  "region": "ap-south-1",
-  "bucket": "fusion-intel-bucket",
-  "prefix": "osint/",
-  "limit": 50,
-  "defaults": {
-    "latitude": 26.9124,
-    "longitude": 75.7873,
-    "locationName": "Default Map Anchor"
+[
+  {
+    "title": "Metro phase extension",
+    "category": "metro",
+    "status": "tendered",
+    "impact": 0.92,
+    "monthsToExecution": 18,
+    "confidence": 84
   }
-}
+]
 ```
 
-## Notes
+Sample upload file:
 
-- S3 image indexing expects coordinates either in object metadata (`latitude`, `longitude`) or in the `defaults` payload.
-- Uploaded imagery is stored in `server/uploads/`.
-- `POST /api/intelligence/seed` loads repeat-safe sample data.
+- `examples/urban-growth-sample.csv`
+
+## Scoring model
+
+Each zone is normalized and scored into:
+
+- `municipalScore`
+- `demandScore`
+- `undervaluationScore`
+- `riskScore`
+- `growthVelocityScore`
+- `projectedAppreciationPct`
+- `projectionHorizonMonths`
+- `marketPhase`
+
+The model is intentionally explainable rather than opaque:
+
+- municipal signals are weighted by category, status, timing, and confidence
+- demand blends search momentum, rental absorption, price trend, and listing activity
+- undervaluation rewards discount-to-ready-stock and affordability
+- risk penalizes saturation, timeline delay, and overheating
+
+## Demo data
+
+The seeded demo includes example micro-markets across:
+
+- Gurugram
+- Hyderabad
+- Pune
+- Noida
+- Chennai
+- Navi Mumbai
+- Bengaluru
+- Jaipur
+- Kolkata
+
+These are illustrative investment profiles for MVP/demo use, not investment advice or verified municipal records.
 
 ## Deploy on Vercel
 
-This repository is now prepared for a single Vercel deployment:
+This repository is prepared for a single Vercel deployment:
 
-- Frontend: built from `client/` and served from `client/dist`
-- Backend: exposed through Vercel Functions in the root `api/` directory
+- Frontend builds from `client/`
+- Backend is exposed through root `api/` functions
 
-### Important production note
-
-On Vercel, function filesystems are read-only except for temporary `/tmp` scratch space, and Express static serving is not used for production assets. That means local `server/uploads/` storage is not suitable for deployed image uploads.
-
-For live image upload support on Vercel, set these environment variables:
-
-```env
-DATABASE_URI=your-mongodb-connection-string
-CLIENT_URL=https://your-project-name.vercel.app
-AWS_REGION=ap-south-1
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-AWS_S3_BUCKET=your-bucket-name
-AWS_S3_UPLOAD_PREFIX=uploads
-```
-
-Optional:
-
-```env
-AWS_S3_UPLOAD_BUCKET=separate-upload-bucket
-AWS_S3_PUBLIC_BASE_URL=https://your-cdn-or-bucket-public-base-url
-```
-
-### Vercel dashboard settings
-
-Use these values in the Vercel project if it does not auto-detect them:
+Suggested Vercel settings:
 
 - Framework Preset: `Vite`
 - Install Command: `npm install --prefix server && npm install --prefix client`
 - Build Command: `npm run vercel-build`
 - Output Directory: `client/dist`
 
-### Deploy steps
+## Current AI layer
 
-1. Push this project to GitHub, GitLab, or Bitbucket.
-2. Import the repository into Vercel.
-3. Add the environment variables listed above in the Vercel dashboard.
-4. Deploy.
-5. After the first deploy, call `POST /api/intelligence/seed` once if you want sample nodes in production.
+The product already includes:
 
-### After deployment
+1. An explainable predictive scoring engine
+2. Municipal document parsing and signal extraction
+3. Portal-style market feed harvesting
+4. AI-generated zone memo summaries
 
-- Frontend will use same-origin `/api` automatically in production.
-- API routes remain available under `/api/...`.
-- Image uploads will persist only when S3 environment variables are configured.
+## Next upgrades
+
+Best follow-on milestones for a more production-grade version:
+
+1. Scheduled live crawling for specific municipal and real-estate sites
+2. Stronger OCR for scanned government PDFs
+3. Time-series storage for price, rent, and search deltas
+4. Zone boundary polygons instead of point markers
+5. Training and validating a learned ranking model against historical appreciation

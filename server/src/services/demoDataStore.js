@@ -1,10 +1,21 @@
 import seedRecords from "../data/seedRecords.js";
+import { enrichZoneRecord } from "./recordEnrichmentService.js";
+
+const average = (values = []) => {
+  const validValues = values.filter((value) => Number.isFinite(value));
+  if (!validValues.length) {
+    return 0;
+  }
+
+  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+};
 
 const records = seedRecords.map((record, index) => ({
   ...record,
+  ...enrichZoneRecord(record),
   _id: `demo-${index + 1}`,
-  createdAt: new Date(record.eventTime),
-  updatedAt: new Date(record.eventTime),
+  createdAt: new Date(),
+  updatedAt: new Date(),
 }));
 
 const textMatch = (record, search) => {
@@ -15,7 +26,9 @@ const textMatch = (record, search) => {
   const haystack = [
     record.title,
     record.description,
-    record.locationName,
+    record.city,
+    record.state,
+    record.corridor,
     ...(record.tags || []),
   ]
     .join(" ")
@@ -26,11 +39,19 @@ const textMatch = (record, search) => {
 
 const applyFilters = (filter = {}) =>
   records.filter((record) => {
-    if (filter.sourceType && record.sourceType !== filter.sourceType) {
+    if (filter.city && record.city !== filter.city) {
       return false;
     }
 
-    if (filter.hasMedia === true && !record.mediaUrl) {
+    if (filter.marketPhase && record.marketPhase !== filter.marketPhase) {
+      return false;
+    }
+
+    if (filter.minScore && record.growthVelocityScore < Number(filter.minScore)) {
+      return false;
+    }
+
+    if (filter.maxHorizon && record.projectionHorizonMonths > Number(filter.maxHorizon)) {
       return false;
     }
 
@@ -41,17 +62,74 @@ const applyFilters = (filter = {}) =>
     return true;
   });
 
+const buildSummary = (selected = []) => {
+  const cityLeaderboard = Object.entries(
+    selected.reduce((accumulator, record) => {
+      const key = record.city || "Unknown";
+      const bucket = accumulator[key] || {
+        city: key,
+        count: 0,
+        totalScore: 0,
+      };
+      bucket.count += 1;
+      bucket.totalScore += record.growthVelocityScore || 0;
+      accumulator[key] = bucket;
+      return accumulator;
+    }, {}),
+  )
+    .map(([, value]) => ({
+      city: value.city,
+      zoneCount: value.count,
+      averageGrowthScore: Math.round((value.totalScore / value.count) * 10) / 10,
+    }))
+    .sort((left, right) => right.averageGrowthScore - left.averageGrowthScore);
+
+  return {
+    totalZones: selected.length,
+    averageGrowthScore: Math.round(average(selected.map((record) => record.growthVelocityScore)) * 10) / 10,
+    hotspotCount: selected.filter((record) => record.growthVelocityScore >= 75).length,
+    undervaluedCount: selected.filter((record) => record.undervaluationScore >= 60).length,
+    strongestCity: cityLeaderboard[0] || null,
+    maxProjectedAppreciationPct: Math.max(
+      0,
+      ...selected.map((record) => record.projectedAppreciationPct || 0),
+    ),
+    activeMunicipalSignals: selected.reduce(
+      (sum, record) => sum + (record.municipalSignals?.length || 0),
+      0,
+    ),
+    cityLeaderboard: cityLeaderboard.slice(0, 5),
+    lastUpdatedAt:
+      selected.length > 0
+        ? selected
+            .map((record) => new Date(record.updatedAt || record.createdAt))
+            .sort((a, b) => b - a)[0]
+            .toISOString()
+        : null,
+  };
+};
+
 export const demoDataStore = {
   list(filter = {}) {
     return applyFilters(filter)
       .slice()
-      .sort((a, b) => new Date(b.eventTime) - new Date(a.eventTime));
+      .sort((left, right) => {
+        if ((filter.sort || "growth") === "upside") {
+          return right.projectedAppreciationPct - left.projectedAppreciationPct;
+        }
+
+        return (
+          right.growthVelocityScore - left.growthVelocityScore ||
+          right.opportunityScore - left.opportunityScore
+        );
+      });
   },
 
   insertMany(items = []) {
     const inserted = items.map((item, index) => {
       const entry = {
         ...item,
+        ...enrichZoneRecord(item),
         _id: `demo-${records.length + index + 1}`,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -79,6 +157,10 @@ export const demoDataStore = {
         records[existingIndex] = {
           ...records[existingIndex],
           ...item,
+          ...enrichZoneRecord({
+            ...records[existingIndex],
+            ...item,
+          }),
           updatedAt: new Date(),
         };
         upserted.push(records[existingIndex]);
@@ -87,6 +169,7 @@ export const demoDataStore = {
 
       const created = {
         ...item,
+        ...enrichZoneRecord(item),
         _id: `demo-${records.length + 1}`,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -99,22 +182,6 @@ export const demoDataStore = {
   },
 
   summary(filter = {}) {
-    const selected = applyFilters(filter);
-
-    return {
-      total: selected.length,
-      OSINT: selected.filter((record) => record.sourceType === "OSINT").length,
-      HUMINT: selected.filter((record) => record.sourceType === "HUMINT").length,
-      IMINT: selected.filter((record) => record.sourceType === "IMINT").length,
-      withMedia: selected.filter((record) => Boolean(record.mediaUrl)).length,
-      latestEventTime:
-        selected.length > 0
-          ? selected
-              .map((record) => new Date(record.eventTime))
-              .sort((a, b) => b - a)[0]
-              .toISOString()
-          : null,
-    };
+    return buildSummary(applyFilters(filter));
   },
 };
-

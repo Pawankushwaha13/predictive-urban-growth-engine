@@ -12,9 +12,8 @@ const startServer = async () => {
 
   app.listen(port, () => {
     const mode = databaseState.connected ? "MongoDB" : "demo fallback";
-    console.log(`Fusion dashboard API listening on port ${port} (${mode})`);
+    console.log(`Urban growth API listening on port ${port} (${mode})`);
   });
 };
 
 startServer();
-

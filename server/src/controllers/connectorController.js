@@ -6,6 +6,15 @@ import {
 } from "@aws-sdk/client-s3";
 import { MongoClient } from "mongodb";
 
+import {
+  listMarketSourceTemplates,
+  harvestMarketSources,
+} from "../services/marketHarvester.js";
+import {
+  listMunicipalSourceTemplates,
+  harvestMunicipalSources,
+} from "../services/municipalHarvester.js";
+import { runUrbanGrowthPipeline } from "../services/urbanGrowthPipelineService.js";
 import { upsertIntelligenceRecords } from "../repositories/intelligenceRepository.js";
 import { normalizeRecord } from "../utils/normalizeRecord.js";
 import { parseStructuredFile } from "../utils/parseStructuredFile.js";
@@ -13,6 +22,31 @@ import { streamToBuffer } from "../utils/streamHelpers.js";
 
 const inferS3ObjectUrl = (bucket, region, key) =>
   `https://${bucket}.s3.${region}.amazonaws.com/${encodeURIComponent(key).replace(/%2F/g, "/")}`;
+
+const parseOptionalJson = (value, fallback = {}) => {
+  if (!value) {
+    return fallback;
+  }
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+export const getConnectorTemplates = (_req, res) => {
+  res.json({
+    data: {
+      municipal: listMunicipalSourceTemplates(),
+      market: listMarketSourceTemplates(),
+    },
+  });
+};
 
 export const syncMongoSource = async (req, res, next) => {
   const mongoClient = new MongoClient(
@@ -43,7 +77,6 @@ export const syncMongoSource = async (req, res, next) => {
     const records = documents.map((document) =>
       normalizeRecord(document, {
         sourceDataset: req.body.sourceDataset || `mongo:${collectionName}`,
-        defaultSourceType: req.body.defaultSourceType || "OSINT",
         fieldMap: req.body.fieldMap || {},
         defaults: req.body.defaults || {},
         ingestMethod: "mongo-sync",
@@ -53,7 +86,7 @@ export const syncMongoSource = async (req, res, next) => {
     const synced = await upsertIntelligenceRecords(records);
 
     res.json({
-      message: "MongoDB intelligence sync completed.",
+      message: "MongoDB zone sync completed.",
       pulled: documents.length,
       stored: synced.length,
     });
@@ -126,7 +159,6 @@ export const syncS3Source = async (req, res, next) => {
           syncedRecords.push(
             normalizeRecord(row, {
               sourceDataset: req.body.sourceDataset || `s3:${object.Key}`,
-              defaultSourceType: req.body.defaultSourceType || "OSINT",
               fieldMap: req.body.fieldMap || {},
               defaults: req.body.defaults || {},
               ingestMethod: "s3-sync",
@@ -153,8 +185,9 @@ export const syncS3Source = async (req, res, next) => {
               description: metadata.description || "",
               latitude: metadata.latitude ?? req.body.defaults?.latitude,
               longitude: metadata.longitude ?? req.body.defaults?.longitude,
-              locationName: metadata.locationname || req.body.defaults?.locationName,
-              confidence: metadata.confidence ?? req.body.defaults?.confidence,
+              city: metadata.city || metadata.locationname || req.body.defaults?.city,
+              state: metadata.state || req.body.defaults?.state,
+              corridor: metadata.corridor || req.body.defaults?.corridor,
               tags: metadata.tags || req.body.defaults?.tags,
               mediaUrl: inferS3ObjectUrl(bucket, region, object.Key),
               mediaType: headResponse.ContentType || "image/jpeg",
@@ -164,13 +197,11 @@ export const syncS3Source = async (req, res, next) => {
                 contentLength: headResponse.ContentLength,
                 lastModified: object.LastModified,
               },
-              sourceType: "IMINT",
               sourceDataset: req.body.sourceDataset || `s3:${prefix || bucket}`,
               externalId: `s3-${bucket}-${object.Key}`,
             },
             {
               sourceDataset: req.body.sourceDataset || `s3:${prefix || bucket}`,
-              defaultSourceType: "IMINT",
               defaults: req.body.defaults || {},
               ingestMethod: "s3-sync",
             },
@@ -182,7 +213,7 @@ export const syncS3Source = async (req, res, next) => {
     const saved = await upsertIntelligenceRecords(syncedRecords);
 
     res.json({
-      message: "S3 intelligence sync completed.",
+      message: "S3 zone sync completed.",
       pulled: syncedRecords.length,
       stored: saved.length,
     });
@@ -191,3 +222,112 @@ export const syncS3Source = async (req, res, next) => {
   }
 };
 
+export const harvestMunicipalSource = async (req, res, next) => {
+  try {
+    const sources = [];
+    const defaults = parseOptionalJson(req.body.defaults, {});
+
+    if (req.file) {
+      sources.push({
+        fileName: req.file.originalname,
+        buffer: req.file.buffer,
+        sourceUrl: req.body.sourceUrl || "",
+        label: req.body.label || req.file.originalname,
+        profileId: req.body.profileId || "",
+        crawlLinkedDocuments: req.body.crawlLinkedDocuments !== "false",
+        maxLinkedDocuments: Number(req.body.maxLinkedDocuments) || undefined,
+      });
+    } else if (req.body.rawText || req.body.sourceUrl || req.body.profileId) {
+      sources.push({
+        rawText: req.body.rawText || "",
+        sourceUrl: req.body.sourceUrl || "",
+        label: req.body.label || "Manual municipal source",
+        profileId: req.body.profileId || "",
+        crawlLinkedDocuments: req.body.crawlLinkedDocuments !== "false",
+        maxLinkedDocuments: Number(req.body.maxLinkedDocuments) || undefined,
+      });
+    }
+
+    const result = await harvestMunicipalSources({
+      mode: req.body.useDemoPack === "true" || sources.length === 0 ? "demo" : "custom",
+      sources,
+      defaults,
+    });
+
+    res.json({
+      message: "Municipal sources harvested successfully.",
+      data: result.records,
+      summary: result.summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const harvestMarketSource = async (req, res, next) => {
+  try {
+    const defaults = parseOptionalJson(req.body.defaults, {});
+    const sources =
+      req.body.rawText || req.body.url || req.body.connectorId
+        ? [
+            {
+              id: req.body.id || "custom-market-feed",
+              label: req.body.label || "Custom market feed",
+              provider: req.body.provider || "Portal snapshot",
+              connectorId: req.body.connectorId || "",
+              rawText: req.body.rawText || "",
+              url: req.body.url || "",
+              fileName: req.body.fileName || "",
+            },
+          ]
+        : [];
+
+    if (
+      sources.length &&
+      sources[0].connectorId &&
+      !sources[0].rawText &&
+      !sources[0].url
+    ) {
+      const error = new Error(
+        "Provide a portal page URL or raw HTML/JSON input for the selected market connector.",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const result = await harvestMarketSources({
+      mode: req.body.useDemoPack ? "demo" : "custom",
+      sources,
+      defaults,
+    });
+
+    res.json({
+      message: "Market sources harvested successfully.",
+      data: result.records,
+      summary: result.summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const runCombinedPipeline = async (req, res, next) => {
+  try {
+    const result = await runUrbanGrowthPipeline({
+      mode: req.body.mode || "demo",
+      defaults: parseOptionalJson(req.body.defaults, {}),
+      municipalSources: Array.isArray(req.body.municipalSources) ? req.body.municipalSources : [],
+      marketSources: Array.isArray(req.body.marketSources) ? req.body.marketSources : [],
+    });
+    const saved = await upsertIntelligenceRecords(result.records);
+
+    res.json({
+      message: "Predictive urban growth pipeline completed.",
+      stored: saved.length,
+      summary: result.summary,
+      preview: saved.slice(0, 5),
+    });
+  } catch (error) {
+    next(error);
+  }
+};

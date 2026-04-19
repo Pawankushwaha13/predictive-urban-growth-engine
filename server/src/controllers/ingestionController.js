@@ -27,14 +27,12 @@ export const ingestStructuredFile = async (req, res, next) => {
 
     const rows = parseStructuredFile(req.file.buffer, req.file.originalname);
     const sourceDataset = req.body.sourceDataset || req.file.originalname;
-    const defaultSourceType = req.body.defaultSourceType || "HUMINT";
     const fieldMap = req.body.fieldMap ? JSON.parse(req.body.fieldMap) : {};
     const defaults = req.body.defaults ? JSON.parse(req.body.defaults) : {};
 
     const normalizedRows = rows.map((row) =>
       normalizeRecord(row, {
         sourceDataset,
-        defaultSourceType,
         defaults,
         fieldMap,
         ingestMethod: "manual-upload",
@@ -44,7 +42,7 @@ export const ingestStructuredFile = async (req, res, next) => {
     const created = await insertManyIntelligenceRecords(normalizedRows);
 
     res.status(201).json({
-      message: "Structured intelligence file ingested successfully.",
+      message: "Urban growth dataset ingested successfully.",
       count: created.length,
       preview: created.slice(0, 3),
     });
@@ -65,9 +63,24 @@ export const ingestImageFiles = async (req, res, next) => {
     const commonDefaults = {
       latitude: req.body.latitude,
       longitude: req.body.longitude,
-      locationName: req.body.locationName,
+      city: req.body.city || req.body.locationName,
+      state: req.body.state,
+      corridor: req.body.corridor,
       description: req.body.description,
-      confidence: req.body.confidence,
+      pricePerSqft: req.body.pricePerSqft,
+      priceGrowthPct: req.body.priceGrowthPct,
+      rentalYieldPct: req.body.rentalYieldPct,
+      rentalAbsorptionPct: req.body.rentalAbsorptionPct,
+      listingDensityScore: req.body.listingDensityScore,
+      searchMomentumScore: req.body.searchMomentumScore,
+      permitMomentumScore: req.body.permitMomentumScore,
+      cluMomentumScore: req.body.cluMomentumScore,
+      infrastructureBoostScore: req.body.infrastructureBoostScore,
+      supplyRiskScore: req.body.supplyRiskScore,
+      monthsToCatalyst: req.body.monthsToCatalyst,
+      priceToCityMedianRatio: req.body.priceToCityMedianRatio,
+      readyToMovePricePerSqft: req.body.readyToMovePricePerSqft,
+      underConstructionPricePerSqft: req.body.underConstructionPricePerSqft,
       tags: req.body.tags,
       sourceDataset: req.body.sourceDataset || "manual-imagery-upload",
     };
@@ -88,8 +101,32 @@ export const ingestImageFiles = async (req, res, next) => {
             description: fileMetadata.description || commonDefaults.description,
             latitude: fileMetadata.latitude ?? commonDefaults.latitude,
             longitude: fileMetadata.longitude ?? commonDefaults.longitude,
-            locationName: fileMetadata.locationName || commonDefaults.locationName,
-            confidence: fileMetadata.confidence ?? commonDefaults.confidence,
+            city: fileMetadata.city || commonDefaults.city,
+            state: fileMetadata.state || commonDefaults.state,
+            corridor: fileMetadata.corridor || commonDefaults.corridor,
+            pricePerSqft: fileMetadata.pricePerSqft ?? commonDefaults.pricePerSqft,
+            priceGrowthPct: fileMetadata.priceGrowthPct ?? commonDefaults.priceGrowthPct,
+            rentalYieldPct: fileMetadata.rentalYieldPct ?? commonDefaults.rentalYieldPct,
+            rentalAbsorptionPct:
+              fileMetadata.rentalAbsorptionPct ?? commonDefaults.rentalAbsorptionPct,
+            listingDensityScore:
+              fileMetadata.listingDensityScore ?? commonDefaults.listingDensityScore,
+            searchMomentumScore:
+              fileMetadata.searchMomentumScore ?? commonDefaults.searchMomentumScore,
+            permitMomentumScore:
+              fileMetadata.permitMomentumScore ?? commonDefaults.permitMomentumScore,
+            cluMomentumScore: fileMetadata.cluMomentumScore ?? commonDefaults.cluMomentumScore,
+            infrastructureBoostScore:
+              fileMetadata.infrastructureBoostScore ?? commonDefaults.infrastructureBoostScore,
+            supplyRiskScore: fileMetadata.supplyRiskScore ?? commonDefaults.supplyRiskScore,
+            monthsToCatalyst: fileMetadata.monthsToCatalyst ?? commonDefaults.monthsToCatalyst,
+            priceToCityMedianRatio:
+              fileMetadata.priceToCityMedianRatio ?? commonDefaults.priceToCityMedianRatio,
+            readyToMovePricePerSqft:
+              fileMetadata.readyToMovePricePerSqft ?? commonDefaults.readyToMovePricePerSqft,
+            underConstructionPricePerSqft:
+              fileMetadata.underConstructionPricePerSqft ??
+              commonDefaults.underConstructionPricePerSqft,
             tags: fileMetadata.tags || commonDefaults.tags,
             metadata: {
               fileName: file.originalname,
@@ -100,13 +137,11 @@ export const ingestImageFiles = async (req, res, next) => {
             },
             mediaUrl: storedAsset.mediaUrl,
             mediaType: storedAsset.mediaType,
-            sourceType: "IMINT",
             sourceDataset: fileMetadata.sourceDataset || commonDefaults.sourceDataset,
             externalId: `${storedAsset.storedFileName}-${Date.now()}`,
           },
           {
             sourceDataset: fileMetadata.sourceDataset || commonDefaults.sourceDataset,
-            defaultSourceType: "IMINT",
             ingestMethod: "image-upload",
           },
         );
@@ -116,7 +151,7 @@ export const ingestImageFiles = async (req, res, next) => {
     const saved = await upsertIntelligenceRecords(records);
 
     res.status(201).json({
-      message: "Imagery uploaded and indexed successfully.",
+      message: "Zone support imagery uploaded successfully.",
       count: saved.length,
       preview: records.slice(0, 3),
     });

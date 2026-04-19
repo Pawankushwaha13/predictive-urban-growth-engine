@@ -28,11 +28,12 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-    service: "strategic-fusion-dashboard-api",
+    service: "urban-growth-prediction-api",
   });
 });
 
 app.use("/api/intelligence", intelligenceRoutes);
+app.use("/api/zones", intelligenceRoutes);
 app.use("/api/ingestion", ingestionRoutes);
 app.use("/api/connectors", connectorRoutes);
 

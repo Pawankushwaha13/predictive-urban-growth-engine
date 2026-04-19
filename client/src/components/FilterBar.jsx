@@ -1,44 +1,66 @@
-const sourceOptions = ["ALL", "OSINT", "HUMINT", "IMINT"];
-
-const FilterBar = ({ filters, onChange }) => (
+const FilterBar = ({ filters, cities, marketPhases, onChange }) => (
   <section className="filter-card">
     <div className="filter-block filter-search">
-      <label htmlFor="search">Search intelligence</label>
+      <label htmlFor="search">Search micro-markets</label>
       <input
         id="search"
         type="text"
         value={filters.search}
         onChange={(event) => onChange({ ...filters, search: event.target.value })}
-        placeholder="Search title, location, tags"
+        placeholder="Search zone, city, corridor, or tag"
       />
     </div>
 
     <div className="filter-block">
-      <label>Source</label>
+      <label>City</label>
       <div className="pill-group">
-        {sourceOptions.map((option) => (
+        {cities.map((city) => (
           <button
-            key={option}
+            key={city}
             type="button"
-            className={`pill-button ${filters.sourceType === option ? "active" : ""}`}
-            onClick={() => onChange({ ...filters, sourceType: option })}
+            className={`pill-button ${filters.city === city ? "active" : ""}`}
+            onClick={() => onChange({ ...filters, city })}
           >
-            {option}
+            {city === "ALL" ? "All cities" : city}
           </button>
         ))}
       </div>
     </div>
 
-    <label className="toggle">
+    <div className="filter-block">
+      <label>Market phase</label>
+      <div className="pill-group">
+        {marketPhases.map((phase) => (
+          <button
+            key={phase}
+            type="button"
+            className={`pill-button ${filters.marketPhase === phase ? "active" : ""}`}
+            onClick={() => onChange({ ...filters, marketPhase: phase })}
+          >
+            {phase === "ALL" ? "All phases" : phase}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div className="filter-block filter-range">
+      <label htmlFor="minScore">Minimum growth score: {filters.minScore}</label>
       <input
-        type="checkbox"
-        checked={filters.hasMedia}
-        onChange={(event) => onChange({ ...filters, hasMedia: event.target.checked })}
+        id="minScore"
+        type="range"
+        min="0"
+        max="90"
+        step="5"
+        value={filters.minScore}
+        onChange={(event) =>
+          onChange({
+            ...filters,
+            minScore: Number(event.target.value),
+          })
+        }
       />
-      <span>Only show records with imagery</span>
-    </label>
+    </div>
   </section>
 );
 
 export default FilterBar;
-

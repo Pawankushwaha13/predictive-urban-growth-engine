@@ -26,45 +26,31 @@ export const resolveMediaUrl = (mediaUrl) => {
   return `${MEDIA_BASE_URL}${mediaUrl}`;
 };
 
-export const fetchRecords = async (filters = {}) => {
-  const searchParams = new URLSearchParams();
+export const fetchZones = async () => request("/zones");
 
-  if (filters.sourceType && filters.sourceType !== "ALL") {
-    searchParams.set("sourceType", filters.sourceType);
-  }
+export const fetchSummary = async () => request("/zones/summary");
 
-  if (filters.search) {
-    searchParams.set("search", filters.search);
-  }
+export const fetchConnectorTemplates = async () => request("/connectors/templates");
 
-  if (filters.hasMedia) {
-    searchParams.set("hasMedia", "true");
-  }
-
-  return request(`/intelligence?${searchParams.toString()}`);
-};
-
-export const fetchSummary = async () => request("/intelligence/summary");
-
-export const seedRecords = async () =>
-  request("/intelligence/seed", {
+export const seedZones = async () =>
+  request("/zones/seed", {
     method: "POST",
   });
 
-export const uploadStructuredFile = async (formData) =>
+export const uploadZoneDataset = async (formData) =>
   request("/ingestion/manual", {
     method: "POST",
     body: formData,
   });
 
-export const uploadImages = async (formData) =>
-  request("/ingestion/images", {
+export const runMunicipalHarvest = async (formData) =>
+  request("/connectors/municipal/harvest", {
     method: "POST",
     body: formData,
   });
 
-export const syncMongo = async (payload) =>
-  request("/connectors/mongodb/sync", {
+export const runMarketHarvest = async (payload) =>
+  request("/connectors/market/harvest", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -72,8 +58,8 @@ export const syncMongo = async (payload) =>
     body: JSON.stringify(payload),
   });
 
-export const syncS3 = async (payload) =>
-  request("/connectors/s3/sync", {
+export const runPredictivePipeline = async (payload = { mode: "demo" }) =>
+  request("/connectors/pipeline/run", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

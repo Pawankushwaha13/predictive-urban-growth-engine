@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  fetchRecords,
+  fetchConnectorTemplates,
   fetchSummary,
-  seedRecords,
-  syncMongo,
-  syncS3,
-  uploadImages,
-  uploadStructuredFile,
+  fetchZones,
+  runMarketHarvest,
+  runMunicipalHarvest,
+  runPredictivePipeline,
+  seedZones,
+  uploadZoneDataset,
 } from "./api/dashboardApi.js";
 import DashboardHeader from "./components/DashboardHeader.jsx";
 import FilterBar from "./components/FilterBar.jsx";
+import HarvesterPanel from "./components/HarvesterPanel.jsx";
 import IngestionPanel from "./components/IngestionPanel.jsx";
 import IntelligenceMap from "./components/IntelligenceMap.jsx";
 import IntelFeed from "./components/IntelFeed.jsx";
@@ -19,11 +21,31 @@ import SummaryStrip from "./components/SummaryStrip.jsx";
 const getRecordKey = (record) =>
   record?._id || `${record?.sourceDataset || "dataset"}:${record?.externalId || record?.title}`;
 
+const matchesSearch = (record, search) => {
+  if (!search) {
+    return true;
+  }
+
+  const haystack = [
+    record.title,
+    record.city,
+    record.state,
+    record.corridor,
+    record.description,
+    ...(record.tags || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(search.toLowerCase());
+};
+
 const App = () => {
   const [filters, setFilters] = useState({
-    sourceType: "ALL",
+    city: "ALL",
+    marketPhase: "ALL",
     search: "",
-    hasMedia: false,
+    minScore: 55,
   });
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState({});
@@ -32,32 +54,63 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [connectorTemplates, setConnectorTemplates] = useState({
+    municipal: [],
+    market: [],
+  });
+  const [pipelineReport, setPipelineReport] = useState(null);
 
-  const visibleRecords = useMemo(() => records, [records]);
+  const visibleRecords = useMemo(
+    () =>
+      records
+        .filter((record) => {
+          if (filters.city !== "ALL" && record.city !== filters.city) {
+            return false;
+          }
 
-  const loadDashboard = async (activeFilters = filters) => {
+          if (filters.marketPhase !== "ALL" && record.marketPhase !== filters.marketPhase) {
+            return false;
+          }
+
+          if (record.growthVelocityScore < filters.minScore) {
+            return false;
+          }
+
+          return matchesSearch(record, filters.search);
+        })
+        .sort((left, right) => {
+          return (
+            right.growthVelocityScore - left.growthVelocityScore ||
+            right.projectedAppreciationPct - left.projectedAppreciationPct
+          );
+        }),
+    [filters, records],
+  );
+
+  const cities = useMemo(
+    () => ["ALL", ...new Set(records.map((record) => record.city).filter(Boolean))],
+    [records],
+  );
+
+  const marketPhases = useMemo(
+    () => ["ALL", ...new Set(records.map((record) => record.marketPhase).filter(Boolean))],
+    [records],
+  );
+
+  const loadDashboard = async () => {
     setLoading(true);
 
     try {
-      const [recordsResponse, summaryResponse] = await Promise.all([
-        fetchRecords(activeFilters),
+      const [recordsResponse, summaryResponse, templatesResponse] = await Promise.all([
+        fetchZones(),
         fetchSummary(),
+        fetchConnectorTemplates(),
       ]);
 
-      setRecords(recordsResponse.data);
-      setSummary(summaryResponse.data);
-      setStorageMode(summaryResponse.meta.storageMode);
-      setSelectedRecord((current) => {
-        if (!recordsResponse.data.length) {
-          return null;
-        }
-
-        const currentKey = getRecordKey(current);
-        const stillVisible = recordsResponse.data.find(
-          (record) => getRecordKey(record) === currentKey,
-        );
-        return stillVisible || recordsResponse.data[0];
-      });
+      setRecords(recordsResponse.data || []);
+      setSummary(summaryResponse.data || {});
+      setStorageMode(summaryResponse.meta?.storageMode || "demo-fallback");
+      setConnectorTemplates(templatesResponse.data || { municipal: [], market: [] });
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -66,21 +119,33 @@ const App = () => {
   };
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      loadDashboard(filters);
-    }, filters.search ? 220 : 0);
+    loadDashboard();
+  }, []);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [filters]);
+  useEffect(() => {
+    setSelectedRecord((current) => {
+      if (!visibleRecords.length) {
+        return null;
+      }
 
-  const runAction = async (task, successMessage) => {
+      const currentKey = getRecordKey(current);
+      const matchingRecord = visibleRecords.find(
+        (record) => getRecordKey(record) === currentKey,
+      );
+
+      return matchingRecord || visibleRecords[0];
+    });
+  }, [visibleRecords]);
+
+  const runAction = async (task, successMessage, onSuccess) => {
     setActionBusy(true);
     setMessage("");
 
     try {
       const response = await task();
+      onSuccess?.(response);
       setMessage(response.message || successMessage);
-      await loadDashboard(filters);
+      await loadDashboard();
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -92,15 +157,60 @@ const App = () => {
     <main className="app-shell">
       <DashboardHeader
         storageMode={storageMode}
-        onSeed={() => runAction(() => seedRecords(), "Sample nodes loaded.")}
+        summary={summary}
+        onSeed={() => runAction(() => seedZones(), "Demo zones refreshed.")}
         actionBusy={actionBusy}
       />
 
       <SummaryStrip summary={summary} />
 
-      <FilterBar filters={filters} onChange={setFilters} />
+      <FilterBar
+        filters={filters}
+        cities={cities}
+        marketPhases={marketPhases}
+        onChange={setFilters}
+      />
 
       {message ? <div className="message-banner">{message}</div> : null}
+
+      <HarvesterPanel
+        actionBusy={actionBusy}
+        connectorTemplates={connectorTemplates}
+        pipelineReport={pipelineReport}
+        onRunPipeline={() =>
+          runAction(
+            () => runPredictivePipeline({ mode: "demo" }),
+            "Predictive pipeline completed.",
+            (response) =>
+              setPipelineReport({
+                type: "pipeline",
+                ...response.summary,
+              }),
+          )
+        }
+        onMunicipalHarvest={(formData) =>
+          runAction(
+            () => runMunicipalHarvest(formData),
+            "Municipal sources harvested.",
+            (response) =>
+              setPipelineReport({
+                type: "municipal",
+                ...response.summary,
+              }),
+          )
+        }
+        onMarketHarvest={(payload) =>
+          runAction(
+            () => runMarketHarvest(payload),
+            "Market feed harvested.",
+            (response) =>
+              setPipelineReport({
+                type: "market",
+                ...response.summary,
+              }),
+          )
+        }
+      />
 
       <section className="content-grid">
         <div className="map-column">
@@ -125,20 +235,13 @@ const App = () => {
         actionBusy={actionBusy}
         onStructuredUpload={(formData) =>
           runAction(
-            () => uploadStructuredFile(formData),
-            "Structured intelligence file ingested.",
+            () => uploadZoneDataset(formData),
+            "Urban growth dataset uploaded successfully.",
           )
         }
-        onImageUpload={(formData) =>
-          runAction(() => uploadImages(formData), "Imagery indexed.")
-        }
-        onMongoSync={(payload) =>
-          runAction(() => syncMongo(payload), "MongoDB sync completed.")
-        }
-        onS3Sync={(payload) => runAction(() => syncS3(payload), "S3 sync completed.")}
       />
 
-      {loading ? <div className="loading-overlay">Refreshing intelligence picture...</div> : null}
+      {loading ? <div className="loading-overlay">Refreshing growth forecasts...</div> : null}
     </main>
   );
 };

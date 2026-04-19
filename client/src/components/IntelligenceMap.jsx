@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect } from "react";
 import {
+  Circle,
   CircleMarker,
   MapContainer,
   Popup,
@@ -9,14 +10,22 @@ import {
   useMap,
 } from "react-leaflet";
 
-import { resolveMediaUrl } from "../api/dashboardApi.js";
-
 const DEFAULT_CENTER = [22.9734, 78.6569];
 
-const sourceColors = {
-  OSINT: "#f6c657",
-  HUMINT: "#c66d36",
-  IMINT: "#6bc4a7",
+const scoreColor = (score) => {
+  if (score >= 80) {
+    return "#f97316";
+  }
+
+  if (score >= 65) {
+    return "#fbbf24";
+  }
+
+  if (score >= 50) {
+    return "#2dd4bf";
+  }
+
+  return "#64748b";
 };
 
 const getRecordKey = (record) =>
@@ -32,90 +41,111 @@ const FitBoundsController = ({ records }) => {
     }
 
     if (records.length === 1) {
-      map.setView([records[0].latitude, records[0].longitude], 8);
+      map.setView([records[0].latitude, records[0].longitude], 10);
       return;
     }
 
     const bounds = records.map((record) => [record.latitude, record.longitude]);
-    map.fitBounds(bounds, { padding: [40, 40] });
+    map.fitBounds(bounds, { padding: [36, 36] });
   }, [map, records]);
 
   return null;
 };
 
 const MapMarker = ({ record, isActive, onHover, onSelect }) => {
-  const markerRef = useRef(null);
-  const color = sourceColors[record.sourceType] || "#f6c657";
+  const color = scoreColor(record.growthVelocityScore);
+  const outerRadius = 5000 + (record.heatWeight || 0) * 180;
+  const innerRadius = 2400 + (record.heatWeight || 0) * 90;
 
   return (
-    <CircleMarker
-      ref={markerRef}
-      center={[record.latitude, record.longitude]}
-      radius={isActive ? 11 : 8}
-      pathOptions={{
-        color,
-        fillColor: color,
-        fillOpacity: isActive ? 0.95 : 0.75,
-        weight: isActive ? 3 : 2,
-      }}
-      eventHandlers={{
-        mouseover: () => {
-          onHover(record);
-          markerRef.current?.openPopup();
-        },
-        mouseout: () => markerRef.current?.closePopup(),
-        click: () => onSelect(record),
-      }}
-    >
-      <Tooltip direction="top" offset={[0, -8]} opacity={1} sticky>
-        {record.title}
-      </Tooltip>
-      <Popup className="map-popup" autoPan={false} closeButton={false}>
-        <div className="popup-card">
-          <span className={`source-tag ${record.sourceType.toLowerCase()}`}>{record.sourceType}</span>
-          <strong>{record.title}</strong>
-          <p>{record.locationName || "Unknown location"}</p>
-          {record.mediaUrl ? (
-            <img
-              src={resolveMediaUrl(record.mediaUrl)}
-              alt={record.title}
-              className="popup-image"
-            />
-          ) : (
-            <div className="popup-placeholder">No imagery attached</div>
-          )}
-          <div className="popup-meta">
-            <span>Confidence {record.confidence}%</span>
-            <span>{new Date(record.eventTime).toLocaleString()}</span>
+    <>
+      <Circle
+        center={[record.latitude, record.longitude]}
+        radius={outerRadius}
+        pathOptions={{
+          stroke: false,
+          fillColor: color,
+          fillOpacity: isActive ? 0.16 : 0.1,
+        }}
+      />
+      <Circle
+        center={[record.latitude, record.longitude]}
+        radius={innerRadius}
+        pathOptions={{
+          stroke: false,
+          fillColor: color,
+          fillOpacity: isActive ? 0.26 : 0.18,
+        }}
+      />
+      <CircleMarker
+        center={[record.latitude, record.longitude]}
+        radius={Math.max(9, Math.round(record.growthVelocityScore / 8))}
+        pathOptions={{
+          color,
+          fillColor: color,
+          fillOpacity: isActive ? 0.92 : 0.74,
+          weight: isActive ? 3 : 2,
+        }}
+        eventHandlers={{
+          mouseover: () => onHover(record),
+          click: () => onSelect(record),
+        }}
+      >
+        <Tooltip direction="top" offset={[0, -8]} opacity={1} sticky>
+          {record.title}
+        </Tooltip>
+        <Popup className="map-popup">
+          <div className="popup-card">
+            <div className="popup-row">
+              <span className={`score-chip band-${String(record.scoreBand || "").toLowerCase().replace(/\s+/g, "-")}`}>
+                {record.scoreBand}
+              </span>
+              <strong>{record.growthVelocityScore}/100</strong>
+            </div>
+            <h3>{record.title}</h3>
+            <p>
+              {record.city}
+              {record.corridor ? ` · ${record.corridor}` : ""}
+            </p>
+            <div className="popup-meta">
+              <span>{record.marketPhase}</span>
+              <span>{record.projectedAppreciationPct}% upside</span>
+            </div>
           </div>
-        </div>
-      </Popup>
-    </CircleMarker>
+        </Popup>
+      </CircleMarker>
+    </>
   );
 };
 
 const IntelligenceMap = ({ records, activeRecord, onHover, onSelect }) => {
-  const memoizedRecords = useMemo(() => records, [records]);
+  const maxUpside =
+    records.length > 0
+      ? Math.max(...records.map((record) => record.projectedAppreciationPct || 0))
+      : 0;
 
   return (
     <section className="map-card">
       <div className="section-head">
         <div>
-          <span className="eyebrow">Operational Picture</span>
-          <h2>Terrain-Anchored Fusion Map</h2>
+          <span className="eyebrow">Spatial Signal</span>
+          <h2>Growth Heat Map</h2>
         </div>
-        <p>{records.length} visible nodes</p>
+        <div className="map-stats">
+          <span>{records.length} visible zones</span>
+          <strong>{maxUpside}% top upside</strong>
+        </div>
       </div>
 
       <div className="map-shell">
         <MapContainer center={DEFAULT_CENTER} zoom={5} scrollWheelZoom className="fusion-map">
           <TileLayer
-            attribution='&copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
-            url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           />
           <ScaleControl position="bottomleft" />
-          <FitBoundsController records={memoizedRecords} />
-          {memoizedRecords.map((record) => (
+          <FitBoundsController records={records} />
+          {records.map((record) => (
             <MapMarker
               key={getRecordKey(record)}
               record={record}
@@ -125,6 +155,22 @@ const IntelligenceMap = ({ records, activeRecord, onHover, onSelect }) => {
             />
           ))}
         </MapContainer>
+      </div>
+
+      <div className="heat-legend">
+        <span>Heat legend</span>
+        <div>
+          <i className="legend-dot hotspot" />
+          High acceleration
+        </div>
+        <div>
+          <i className="legend-dot growth" />
+          Active growth track
+        </div>
+        <div>
+          <i className="legend-dot watch" />
+          Watch corridor
+        </div>
       </div>
     </section>
   );

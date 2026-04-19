@@ -1,18 +1,49 @@
 import path from "path";
 
+import { enrichZoneRecord } from "../services/recordEnrichmentService.js";
+
 const FIELD_ALIASES = {
-  title: ["title", "name", "headline", "reportTitle"],
-  description: ["description", "summary", "details", "notes", "body"],
-  sourceType: ["sourceType", "type", "intelType", "category"],
+  title: ["title", "zoneName", "zone", "microMarket", "name"],
+  description: ["description", "summary", "thesis", "notes"],
+  city: ["city", "municipalCity", "districtCity"],
+  state: ["state", "region", "province"],
+  corridor: ["corridor", "submarket", "cluster", "microCorridor"],
   sourceDataset: ["sourceDataset", "dataset", "collection", "feed"],
-  locationName: ["locationName", "location", "place", "area", "site"],
   latitude: ["latitude", "lat", "y"],
   longitude: ["longitude", "lng", "lon", "x"],
-  eventTime: ["eventTime", "timestamp", "time", "reportedAt", "date"],
   sourceLink: ["sourceLink", "url", "link", "reference"],
-  confidence: ["confidence", "score", "reliability"],
   tags: ["tags", "keywords", "labels"],
-  mediaUrl: ["mediaUrl", "imageUrl", "imageryUrl", "photoUrl"],
+  pricePerSqft: ["pricePerSqft", "avgPricePerSqft", "sellingPricePerSqft", "price_psf"],
+  priceGrowthPct: ["priceGrowthPct", "pricingVelocity", "priceAppreciationPct", "priceGrowth"],
+  rentalYieldPct: ["rentalYieldPct", "yieldPct", "rentalYield"],
+  rentalAbsorptionPct: ["rentalAbsorptionPct", "rentalAbsorption", "absorptionRate"],
+  listingDensityScore: ["listingDensityScore", "listingDensity", "developerActivityScore"],
+  searchMomentumScore: ["searchMomentumScore", "searchVolumeScore", "searchMomentum"],
+  permitMomentumScore: ["permitMomentumScore", "permitMomentum", "tenderMomentumScore"],
+  cluMomentumScore: ["cluMomentumScore", "cluChangeScore", "landUseChangeScore"],
+  infrastructureBoostScore: [
+    "infrastructureBoostScore",
+    "municipalBoostScore",
+    "infrastructureScore",
+  ],
+  supplyRiskScore: ["supplyRiskScore", "inventoryRiskScore", "supplyRisk"],
+  monthsToCatalyst: ["monthsToCatalyst", "monthsToExecution", "timeToCatalyst"],
+  priceToCityMedianRatio: ["priceToCityMedianRatio", "cityMedianRatio", "relativePriceRatio"],
+  readyToMovePricePerSqft: [
+    "readyToMovePricePerSqft",
+    "readyPricePerSqft",
+    "readyInventoryPricePerSqft",
+  ],
+  underConstructionPricePerSqft: [
+    "underConstructionPricePerSqft",
+    "underConstructionPsf",
+    "ucPricePerSqft",
+  ],
+  readyToMovePremiumPct: ["readyToMovePremiumPct", "readyPremiumPct"],
+  underConstructionDiscountPct: ["underConstructionDiscountPct", "ucDiscountPct"],
+  municipalSignals: ["municipalSignals", "signals", "pipelineSignals"],
+  sourceTrace: ["sourceTrace", "sources", "provenance"],
+  mediaUrl: ["mediaUrl", "imageUrl", "photoUrl"],
   mediaType: ["mediaType", "mimeType"],
   externalId: ["externalId", "id", "_id", "recordId"],
 };
@@ -41,34 +72,12 @@ const toNumber = (value) => {
     return undefined;
   }
 
-  const number = Number(value);
+  const normalizedValue =
+    typeof value === "string"
+      ? value.replace(/,/g, "").replace(/%/g, "").trim()
+      : value;
+  const number = Number(normalizedValue);
   return Number.isFinite(number) ? number : undefined;
-};
-
-const toDate = (value) => {
-  if (!value) {
-    return new Date().toISOString();
-  }
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
-};
-
-const toConfidence = (value) => {
-  if (value === undefined || value === null || value === "") {
-    return 50;
-  }
-
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return 50;
-  }
-
-  if (number >= 0 && number <= 1) {
-    return Math.round(number * 100);
-  }
-
-  return Math.max(0, Math.min(100, Math.round(number)));
 };
 
 const toTags = (value) => {
@@ -86,16 +95,6 @@ const toTags = (value) => {
   return [];
 };
 
-const toSourceType = (value, fallback = "HUMINT") => {
-  const normalized = String(value || fallback).trim().toUpperCase();
-
-  if (["OSINT", "HUMINT", "IMINT"].includes(normalized)) {
-    return normalized;
-  }
-
-  return fallback;
-};
-
 const inferMediaType = (url = "") => {
   const extension = path.extname(url).toLowerCase();
 
@@ -110,6 +109,64 @@ const inferMediaType = (url = "") => {
   return "";
 };
 
+const parseMunicipalSignals = (value) => {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      return [];
+    }
+
+    try {
+      const parsedValue = JSON.parse(trimmedValue);
+      return Array.isArray(parsedValue) ? parsedValue : [];
+    } catch {
+      return trimmedValue
+        .split(";")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => ({
+          title: item,
+          category: "utility",
+          status: "announced",
+          impact: 0.6,
+          monthsToExecution: 30,
+          confidence: 65,
+        }));
+    }
+  }
+
+  return [];
+};
+
+const parseSourceTrace = (value) => {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsedValue = JSON.parse(value);
+      return Array.isArray(parsedValue) ? parsedValue : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
 export const normalizeRecord = (input, options = {}) => {
   const fieldMap = options.fieldMap || {};
   const defaults = options.defaults || {};
@@ -122,7 +179,7 @@ export const normalizeRecord = (input, options = {}) => {
     toNumber(defaults.longitude);
 
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error("Every intelligence record requires valid latitude and longitude.");
+    throw new Error("Every zone requires valid latitude and longitude.");
   }
 
   const mediaUrl =
@@ -133,44 +190,106 @@ export const normalizeRecord = (input, options = {}) => {
     String(getFirstValue(input, buildFieldKeys(fieldMap, "mediaType")) || defaults.mediaType || "")
       .trim() || inferMediaType(mediaUrl);
 
-  return {
+  const zone = {
     title: String(
       getFirstValue(input, buildFieldKeys(fieldMap, "title")) ||
         defaults.title ||
-        "Untitled intelligence node",
+        "Untitled growth zone",
     ).trim(),
     description: String(
       getFirstValue(input, buildFieldKeys(fieldMap, "description")) ||
         defaults.description ||
         "",
     ).trim(),
-    sourceType: toSourceType(
-      getFirstValue(input, buildFieldKeys(fieldMap, "sourceType")),
-      options.defaultSourceType || "HUMINT",
-    ),
+    city: String(getFirstValue(input, buildFieldKeys(fieldMap, "city")) || defaults.city || "").trim(),
+    state: String(
+      getFirstValue(input, buildFieldKeys(fieldMap, "state")) || defaults.state || "",
+    ).trim(),
+    corridor: String(
+      getFirstValue(input, buildFieldKeys(fieldMap, "corridor")) || defaults.corridor || "",
+    ).trim(),
     sourceDataset: String(
       getFirstValue(input, buildFieldKeys(fieldMap, "sourceDataset")) ||
         options.sourceDataset ||
         defaults.sourceDataset ||
         "manual",
     ).trim(),
-    locationName: String(
-      getFirstValue(input, buildFieldKeys(fieldMap, "locationName")) ||
-        defaults.locationName ||
-        "",
-    ).trim(),
     latitude,
     longitude,
-    eventTime: toDate(getFirstValue(input, buildFieldKeys(fieldMap, "eventTime")) || defaults.eventTime),
     sourceLink: String(
       getFirstValue(input, buildFieldKeys(fieldMap, "sourceLink")) ||
         defaults.sourceLink ||
         "",
     ).trim(),
-    confidence: toConfidence(
-      getFirstValue(input, buildFieldKeys(fieldMap, "confidence")) ?? defaults.confidence,
-    ),
     tags: toTags(getFirstValue(input, buildFieldKeys(fieldMap, "tags")) ?? defaults.tags),
+    pricePerSqft:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "pricePerSqft"))) ??
+      toNumber(defaults.pricePerSqft) ??
+      0,
+    priceGrowthPct:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "priceGrowthPct"))) ??
+      toNumber(defaults.priceGrowthPct) ??
+      0,
+    rentalYieldPct:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "rentalYieldPct"))) ??
+      toNumber(defaults.rentalYieldPct) ??
+      0,
+    rentalAbsorptionPct:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "rentalAbsorptionPct"))) ??
+      toNumber(defaults.rentalAbsorptionPct) ??
+      0,
+    listingDensityScore:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "listingDensityScore"))) ??
+      toNumber(defaults.listingDensityScore) ??
+      0,
+    searchMomentumScore:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "searchMomentumScore"))) ??
+      toNumber(defaults.searchMomentumScore) ??
+      0,
+    permitMomentumScore:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "permitMomentumScore"))) ??
+      toNumber(defaults.permitMomentumScore) ??
+      0,
+    cluMomentumScore:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "cluMomentumScore"))) ??
+      toNumber(defaults.cluMomentumScore) ??
+      0,
+    infrastructureBoostScore:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "infrastructureBoostScore"))) ??
+      toNumber(defaults.infrastructureBoostScore) ??
+      0,
+    supplyRiskScore:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "supplyRiskScore"))) ??
+      toNumber(defaults.supplyRiskScore) ??
+      0,
+    monthsToCatalyst:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "monthsToCatalyst"))) ??
+      toNumber(defaults.monthsToCatalyst) ??
+      36,
+    priceToCityMedianRatio:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "priceToCityMedianRatio"))) ??
+      toNumber(defaults.priceToCityMedianRatio) ??
+      1,
+    readyToMovePricePerSqft:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "readyToMovePricePerSqft"))) ??
+      toNumber(defaults.readyToMovePricePerSqft) ??
+      0,
+    underConstructionPricePerSqft:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "underConstructionPricePerSqft"))) ??
+      toNumber(defaults.underConstructionPricePerSqft) ??
+      0,
+    readyToMovePremiumPct:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "readyToMovePremiumPct"))) ??
+      toNumber(defaults.readyToMovePremiumPct),
+    underConstructionDiscountPct:
+      toNumber(getFirstValue(input, buildFieldKeys(fieldMap, "underConstructionDiscountPct"))) ??
+      toNumber(defaults.underConstructionDiscountPct),
+    municipalSignals: parseMunicipalSignals(
+      getFirstValue(input, buildFieldKeys(fieldMap, "municipalSignals")) ?? defaults.municipalSignals,
+    ),
+    sourceTrace: parseSourceTrace(
+      getFirstValue(input, buildFieldKeys(fieldMap, "sourceTrace")) ?? defaults.sourceTrace,
+    ),
     mediaUrl,
     mediaType,
     metadata: {
@@ -183,5 +302,6 @@ export const normalizeRecord = (input, options = {}) => {
     ).trim(),
     ingestMethod: options.ingestMethod || defaults.ingestMethod || "manual-upload",
   };
-};
 
+  return enrichZoneRecord(zone);
+};

@@ -8,12 +8,15 @@ import {
 
 export const getIntelligenceRecords = async (req, res, next) => {
   try {
-    const { sourceType, search, hasMedia } = req.query;
+    const { city, marketPhase, search, minScore, maxHorizon, sort } = req.query;
 
     const records = await listIntelligenceRecords({
-      sourceType,
+      city,
+      marketPhase,
       search,
-      hasMedia: hasMedia === "true",
+      minScore,
+      maxHorizon,
+      sort,
     });
 
     res.json({
@@ -48,7 +51,7 @@ export const seedIntelligenceRecords = async (_req, res, next) => {
     const records = await upsertIntelligenceRecords(seedRecords);
 
     res.status(201).json({
-      message: "Seed data loaded successfully.",
+      message: "Predictive urban growth demo zones loaded successfully.",
       count: records.length,
     });
   } catch (error) {
