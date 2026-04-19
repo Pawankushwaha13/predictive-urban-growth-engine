@@ -9,5 +9,3 @@ server-dev-error.log
 client-dev.log
 client-dev-error.log
 strategic-fusion-dashboard-source.zip
-api/**
-!api.js
